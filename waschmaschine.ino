@@ -19,9 +19,20 @@ Adafruit_ADS1115 ads1115; // Construct an ads1115
 // Kalibrierung erfolgte mit Haushaltsgeräten
 const float factor = 0.030616891; // [A/mv]
 int sample_rate = 2000; // [ms] zwei Sekunden lang messen
-int strompreis = 30; // [cent/kWh]
+int strompreis = 28; // [cent/kWh]
 
 String hostname = "Waschmaschine";
+
+String text= "";
+double current;
+float power;
+int p_max = 0;
+float E = 0;
+float kosten = 0;
+unsigned long currentMillis = 0;
+int stunde, minuten, sekunde;
+int counter = 0;
+
 
 WebServer server(80);
 
@@ -49,12 +60,63 @@ void WiFiConnect() {
   Serial.println(WiFi.localIP());
 }
 
+// Replace dots with commas.
+String replace_dot(float number){
+  String text = String(number, 2);
+  text.replace(".", ",");
+  return(text);
+}
+
+// 1000 Watt to 1.000 Watt
+String add_dot(int number) {
+	
+	if (number >= 1000) {   
+		String text = String(number/1000); 
+		text += "."; 
+    
+		if ( ((number%1000) >= 10) & ((number%1000) < 100)) {
+			text += "0";
+		}
+    
+		if ((number%1000) < 10) {
+			text += "00";
+		}
+    
+		text += String(number%1000);
+		
+		return(text);
+	}
+	else {
+		return(String(number));
+	}
+
+}
+
 void sendMessage() {
   WiFiClientSecure client;
   client.setCACert(TELEGRAM_CERTIFICATE_ROOT); // Add root certificate for api.telegram.org
   UniversalTelegramBot bot(BOTtoken, client);
-  String mes = "Hallo Mama,\n\n";
-  mes += "ich bin nun unter " + WiFi.localIP().toString() + " erreichbar.";
+  String mes = "Übersicht:\n";
+  mes += "Maximale Leistung: " + add_dot(p_max) + " Watt";
+  mes += "\n";
+  mes += "Energie: " + replace_dot(E/1000) + " kWh";
+  mes += "\n";
+  mes += "Kosten: " + replace_dot(kosten) + " €";
+  mes += "\n";
+  mes += "Dauer: ";
+  if (stunde == 1) {
+	mes += String(stunde) + " Stunde und ";
+  }
+  else {
+	mes += String(stunde) + " Stunden und ";
+  }
+  if (minuten == 1){
+	mes += String(minuten) + " Minuten.";
+  } else {
+	mes += String(minuten) + " Minute.";
+  }
+  mes += "\n";
+  mes += WiFi.localIP().toString();
   bot.sendMessage(CHAT_ID, mes, ""); // https://core.telegram.org/bots/api#formatting-options
 }
 
@@ -86,15 +148,6 @@ float getcurrent() {
   
 }
 
-
-String text= "";
-double current;
-float power;
-int p_max = 0;
-float E = 0;
-float kosten = 0;
-int stunde, minuten, sekunde;
-
 const String page PROGMEM = "<head>"
             " <title>Waschmaschine</title>"
             " <script src=\"https://ajax.googleapis.com/ajax/libs/jquery/3.6.0/jquery.min.js\"></script>"
@@ -116,6 +169,8 @@ const String page PROGMEM = "<head>"
             " <h2>Energie:</h2><h2 id=\"energie\">-,--</h2><h2>Wh</h2><br>\r\n"
             " <h2>Kosten:</h2><h2 id=\"kosten\">-,--</h2><h2>€</h2><br>\r\n"
             " <h2>Läuft seit:</h2><h2 id=\"runtime\">--:--:--</h2><br>\r\n"
+            " <h2>Status:</h2><h2 id=\"status\">-</h2><br>\r\n"
+            " <p>Arbeitspreis: " + String(strompreis) + " Cent/kWh</p>"
             " <script>\r\n"
             " $(document).ready(function(){\r\n"
             " setInterval(getData,2000);\r\n"
@@ -131,6 +186,7 @@ const String page PROGMEM = "<head>"
             "  $('#energie').html(s[3].replace(\'.\',\',\'));\r\n"
             "  $('#kosten').html(s[4].replace(\'.\',\',\'));\r\n"
             "  $('#runtime').html(s[5]);\r\n"
+            "  $('#status').html(s[6]);\r\n"
             "}\r\n"
             "}).done(function() {\r\n"
             "  console.log('ok');\r\n"
@@ -177,6 +233,13 @@ void setup() {
       text += "0";
     }
     text += (String)sekunde;
+    text += "-";
+    if (counter >= 40){
+      text += "Fertig";
+    }
+    else {
+      text += "Läuft";
+    }
     //Serial.println(text);
     server.send(200, "text/plain", text);
   });
@@ -189,8 +252,6 @@ void setup() {
   Serial.println("HTTP server started");
 
   http.setReuse(true);
-  
-  sendMessage();
  
 }
 
@@ -217,10 +278,29 @@ void loop() {
   if(power > p_max) {
     p_max = round(power);
   }
+
+  // wenn nach 18 Minuten im Idle, fange an zu prüfen ob fertig
+  if ((current < 0.05) & (currentMillis > 1080000)) {
+    counter = counter + 1;
+  }
+  else {
+    counter = 0;
+  }
   
-  sekunde = (millis()/1000) % 60;
-  minuten  = (millis()/60000) % 60;
-  stunde  = (millis()/3600000) % 24;
+  // Nachricht nur einmal verschicken
+  // Von 27 Waschvorgängen, waren 30 Messpunkte am Stück im Idle * 1,5 Sicherheitsfaktor = 45
+  // 45*2 Sekunden = 1,5 Minuten. -> 1,5 Minuten nach Beenden des Waschvorgangs, sollte die Nachricht kommen
+  // & messege_sent = False nicht eingebaut, falls die Berechnungen falsch sind...
+  if (counter == 45) {
+    sendMessage();  
+  }
+
+  currentMillis = millis();
+  
+  sekunde = (currentMillis/1000) % 60;
+  minuten = (currentMillis/60000) % 60;
+  stunde  = (currentMillis/3600000) % 24;
+
 
 
   /*
