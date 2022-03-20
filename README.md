@@ -60,7 +60,7 @@ waschmachine.ino
 
 Betrachtet man die letzten Messpunkte von mehreren diversen Waschprogramme (alle zwei Sekunden wird der aktuelle Stromverbrauch gemessen), fällt ein gewisses Muster auf (siehe Abbildung 1):
 
-![Stromverläufe der letzten Sekunden](plot.jpg "Abbildung 1")
+![Stromverläufe der letzten Sekunden](https://raw.githubusercontent.com/tschanik/waschmashine/main/plot.JPG "Abbildung 1")
 Abbildung 1
 
 Hierbei ist zu erkennen, dass sich die Trommel noch viermal dreht, bevor nach der vierten Umdrehung die Türe entriegelt wird(Siehe Messpunkt 36). Ziel ist es, die Nachricht über die Beendigung des Waschvorganges so nah wie möglich an diesem Punkt zu versenden. Dabei wurde zunächst mit Machine Learning versucht, eine Funktion zu finden, die dieses Verlauf erkennt.
